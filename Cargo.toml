@@ -1,0 +1,8 @@
+[package]
+name = "types"
+authors = ["Soundwave <soundwave@sndwv.net>"]
+edition = "2021"
+description = "A package for working with types with Rust as the metalanguage"
+repository = "https://github.com/PS-Soundwave/types"
+license = "MIT-0"
+publish = false

@@ -24,7 +24,7 @@ trait TTerm: Display + Clone + Eq + Into<Term> {
 
     fn lift(&self, cutoff: usize, amount: isize) -> Term;
 
-    fn fmt_with_context(&self, context: &Vec<&str>) -> String;
+    fn fmt_with_context(&self, context: &Vec<&str>, head: bool, tail: bool) -> String;
 
     fn normalize(&self) -> Term {
         let mut term: Term = self.step();
@@ -100,18 +100,18 @@ impl TTerm for Term {
         }
     }
 
-    fn fmt_with_context(&self, context: &Vec<&str>) -> String {
+    fn fmt_with_context(&self, context: &Vec<&str>, head: bool, tail: bool) -> String {
         return match self {
-            Term::True(t) => t.fmt_with_context(context),
-            Term::False(t) => t.fmt_with_context(context),
-            Term::If(t) => t.fmt_with_context(context),
-            Term::Zero(t) => t.fmt_with_context(context),
-            Term::Succ(t) => t.fmt_with_context(context),
-            Term::Pred(t) => t.fmt_with_context(context),
-            Term::IsZero(t) => t.fmt_with_context(context),
-            Term::Var(t) => t.fmt_with_context(context),
-            Term::App(t) => t.fmt_with_context(context),
-            Term::Lambda(t) => t.fmt_with_context(context)
+            Term::True(t) => t.fmt_with_context(context, head, tail),
+            Term::False(t) => t.fmt_with_context(context, head, tail),
+            Term::If(t) => t.fmt_with_context(context, head, tail),
+            Term::Zero(t) => t.fmt_with_context(context, head, tail),
+            Term::Succ(t) => t.fmt_with_context(context, head, tail),
+            Term::Pred(t) => t.fmt_with_context(context, head, tail),
+            Term::IsZero(t) => t.fmt_with_context(context, head, tail),
+            Term::Var(t) => t.fmt_with_context(context, head, tail),
+            Term::App(t) => t.fmt_with_context(context, head, tail),
+            Term::Lambda(t) => t.fmt_with_context(context, head, tail)
         }
     }
 }
@@ -241,14 +241,14 @@ impl TTerm for TermTrue {
         return self.clone().into();
     }
     
-    fn fmt_with_context(&self, _context: &Vec<&str>) -> String {
+    fn fmt_with_context(&self, _context: &Vec<&str>, _head: bool, _tail: bool) -> String {
         return "true".to_owned();
     }
 }
 
 impl Display for TermTrue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.fmt_with_context(&vec![]))
+        write!(f, "{}", self.fmt_with_context(&vec![], true, true))
     }
 }
 
@@ -275,14 +275,14 @@ impl TTerm for TermFalse {
         return self.clone().into();
     }
     
-    fn fmt_with_context(&self, _context: &Vec<&str>) -> String {
+    fn fmt_with_context(&self, _context: &Vec<&str>, _head: bool, _tail: bool) -> String {
         return "false".to_owned();
     }
 }
 
 impl Display for TermFalse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.fmt_with_context(&vec![]))
+        write!(f, "{}", self.fmt_with_context(&vec![], true, true))
     }
 }
 
@@ -313,14 +313,25 @@ impl TTerm for TermIf {
         return TermIf::new(&self.guard.lift(cutoff, amount), &self.true_branch.lift(cutoff, amount), &self.false_branch.lift(cutoff, amount)).into();
     }
     
-    fn fmt_with_context(&self, context: &Vec<&str>) -> String {
-        return format!("(if {} then {} else {})", self.guard.fmt_with_context(context), self.true_branch.fmt_with_context(context), self.false_branch.fmt_with_context(context));
+    fn fmt_with_context(&self, context: &Vec<&str>, head: bool, tail: bool) -> String {
+        let guard = self.guard.fmt_with_context(context, false, false);
+        let true_branch = self.true_branch.fmt_with_context(context, false, false);
+        let false_branch = self.false_branch.fmt_with_context(context, false, true);
+
+        // Syntax is unambiguous if this appears in non-head without parens because it binds greedily to the guard term, but this can be difficult to parse visually.
+        // Similar notes apply to other constant function terms.
+        if !head || !tail {
+            return format!("(if {} then {} else {})", guard, true_branch, false_branch);
+        }
+        else {
+            return format!("if {} then {} else {}", guard, true_branch, false_branch);
+        }
     }
 }
 
 impl Display for TermIf {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.fmt_with_context(&vec![]))
+        write!(f, "{}", self.fmt_with_context(&vec![], true, true))
     }
 }
 
@@ -347,14 +358,14 @@ impl TTerm for TermZero {
         return self.clone().into();
     }
     
-    fn fmt_with_context(&self, _context: &Vec<&str>) -> String {
+    fn fmt_with_context(&self, _context: &Vec<&str>, _head: bool, _tail: bool) -> String {
         return "0".to_owned();
     }
 }
 
 impl Display for TermZero {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.fmt_with_context(&vec![]))
+        write!(f, "{}", self.fmt_with_context(&vec![], true, true))
     }
 }
 
@@ -381,7 +392,7 @@ impl TTerm for TermSucc {
         return TermSucc::new(&self.arg.lift(cutoff, amount)).into();
     }
     
-    fn fmt_with_context(&self, context: &Vec<&str>) -> String {
+    fn fmt_with_context(&self, context: &Vec<&str>, head: bool, tail: bool) -> String {
         if self.is_numeric() {
             let mut value: u64 = 1;
             let mut term: &Term = self.arg.as_ref();
@@ -395,13 +406,20 @@ impl TTerm for TermSucc {
             return format!("{}", value);
         }
 
-        return format!("(succ {})", self.arg.fmt_with_context(context));
+        let arg = self.arg.fmt_with_context(context, false, true);
+
+        if !head || !tail {
+            return format!("(succ {})", arg);
+        }
+        else {
+            return format!("succ {}", arg);
+        }
     }
 }
 
 impl Display for TermSucc {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.fmt_with_context(&vec![]))
+        write!(f, "{}", self.fmt_with_context(&vec![], true, true))
     }
 }
 
@@ -436,14 +454,21 @@ impl TTerm for TermPred {
         return TermPred::new(&self.arg.lift(cutoff, amount)).into();
     }
     
-    fn fmt_with_context(&self, context: &Vec<&str>) -> String {
-        return format!("(pred {})", self.arg.fmt_with_context(context));
+    fn fmt_with_context(&self, context: &Vec<&str>, head: bool, tail: bool) -> String {
+        let arg = self.arg.fmt_with_context(context, false, true);
+
+        if !head || !tail {
+            return format!("(pred {})", arg);
+        }
+        else {
+            return format!("pred {}", arg);
+        }
     }
 }
 
 impl Display for TermPred {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.fmt_with_context(&vec![]))
+        write!(f, "{}", self.fmt_with_context(&vec![], true, true))
     }
 }
 
@@ -478,14 +503,21 @@ impl TTerm for TermIsZero {
         return TermIsZero::new(&self.arg.lift(cutoff, amount)).into();
     }
     
-    fn fmt_with_context(&self, context: &Vec<&str>) -> String {
-        return format!("(iszero {})", self.arg.fmt_with_context(context));
+    fn fmt_with_context(&self, context: &Vec<&str>, head: bool, tail: bool) -> String {
+        let arg = self.arg.fmt_with_context(context, false, true);
+
+        if !head || !tail {
+            return format!("(iszero {})", arg);
+        }
+        else {
+            return format!("iszero {}", arg);
+        }
     }
 }
 
 impl Display for TermIsZero {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.fmt_with_context(&vec![]))
+        write!(f, "{}", self.fmt_with_context(&vec![], true, true))
     }
 }
 
@@ -529,7 +561,7 @@ impl TTerm for TermVar {
         return self.clone().into();
     }
     
-    fn fmt_with_context(&self, context: &Vec<&str>) -> String {
+    fn fmt_with_context(&self, context: &Vec<&str>, _head: bool, _tail: bool) -> String {
         if self.index < context.len() {
             return context[self.index].to_owned();
         }
@@ -541,7 +573,7 @@ impl TTerm for TermVar {
 
 impl Display for TermVar {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-       write!(f, "{}", self.fmt_with_context(&vec![]))
+       write!(f, "{}", self.fmt_with_context(&vec![], true, true))
     }
 }
 
@@ -577,14 +609,24 @@ impl TTerm for TermApp {
         return TermApp::new(&self.f.lift(cutoff, amount), &self.arg.lift(cutoff, amount)).into();
     }
     
-    fn fmt_with_context(&self, context: &Vec<&str>) -> String {
-        return format!("({} {})", self.f.fmt_with_context(context), self.arg.fmt_with_context(context));
+    fn fmt_with_context(&self, context: &Vec<&str>, head: bool, _tail: bool) -> String {
+        let f = self.f.fmt_with_context(context, true, false);
+
+        // Syntax is unambiguous if arg is considered in tail position for !head || tail, but lambdas in tail position are awkward to read particularly if they have an application head
+        let arg = self.arg.fmt_with_context(context, false, false);
+        
+        if head {
+            return format!("{} {}", f, arg);
+        }
+        else {
+            return format!("({} {})", f, arg);
+        }
     }
 }
 
 impl Display for TermApp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.fmt_with_context(&vec![]))
+        write!(f, "{}", self.fmt_with_context(&vec![], true, true))
     }
 }
 
@@ -616,8 +658,8 @@ impl TTerm for TermLambda {
     fn lift(&self, cutoff: usize, amount: isize) -> Term {
         return TermLambda::new(&self.name, &self.body.lift(cutoff + 1, amount)).into();
     }
-    
-    fn fmt_with_context(&self, context: &Vec<&str>) -> String {
+
+    fn fmt_with_context(&self, context: &Vec<&str>, _head: bool, tail: bool) -> String {
         let mut name = self.name.clone();
         let mut i: isize = 0;
         
@@ -629,13 +671,20 @@ impl TTerm for TermLambda {
         let mut new_context: Vec<&str> = vec![&name];
         new_context.extend(context);
 
-        return format!("λ{}.{}", name, self.body.fmt_with_context(&new_context));
+        let body = self.body.fmt_with_context(&new_context, true, true);
+
+        if tail {
+            return format!("λ{}.{}", name, body);
+        }
+        else {
+            return format!("(λ{}.{})", name, body);
+        }
     }
 }
 
 impl Display for TermLambda {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.fmt_with_context(&vec![]))
+        write!(f, "{}", self.fmt_with_context(&vec![], true, true))
     }
 }
 
@@ -703,8 +752,6 @@ fn main() {
     let ex15 = TermApp::new(&factorial, &c_3);
     let ex16 = TermApp::new(&realnat, &TermApp::new(&factorial, &c_3));
 
-    let ex17 = TermLambda::new("x", &TermLambda::new("x", &TermLambda::new("x", &TermLambda::new("x", &TermVar::new(0)))));
-
     println!("{} = {}", ex1, ex1.normalize());
     println!("{} = {}", ex2, ex2.normalize());
     println!("tru = {}", tru);
@@ -745,5 +792,4 @@ fn main() {
     println!("factorial = {}\n -> {}", factorial, factorial.normalize());
     println!("(factorial c_3) = {}\n -> {}", ex15, ex15.normalize());
     println!("(realnat (factorial c_3)) = {}\n -> {}", ex16, ex16.normalize());
-    println!("{} = {}", ex17, ex17.normalize());
 }
